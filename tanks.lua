@@ -22,32 +22,37 @@ require('torch')
 function createUniformPopulation()
 end
 
+-- Setting manual seed for repeated results
+torch.manualSeed(1)
+
 inventionCounter = 1
+
+transferFunction = 'ReLU'
 
 -- This function create a new neuron that recieves input from inputCount neurons
 -- and passes it to outputCount neurons
-function createEmptyNeuron(inputCount, inputIDs, outputCount, outputIDs, id)
+function createEmptyNeuron(inputCount, inputIDs, id)--outputCount, outputIDs, id)
     -- Create weights, initialized with random value    
     local inputWeights = {}
     for i = 1, inputCount do
         -- Weight value
-        local w = torch.rand()
+        local w = torch.uniform()
         -- Id of a node from which the weight is coming
         local from = inputIDs[i]
         -- Is the connection disabled?
         local disabled = false
         inputWeights[i] = {value = w, from = from, disabled = disabled}
     end
-    local outputWeights = {}
-    for i = 1, outputCount do
-        local w = torch.rand()
-        local to = outputIDs[i]
-        local disabled = false
-        outputWeights[i] = {value = w, to = to, disabled = disabled}
-    end
+    --local outputWeights = {}
+    --for i = 1, outputCount do
+    --    local w = torch.random()
+    --    local to = outputIDs[i]
+    --    local disabled = false
+    --    outputWeights[i] = {value = w, to = to, disabled = disabled}
+    --end
     -- Setting up node id so we know know what are connections (and what is the
     -- structure of a neural network)
-    return {inputWeights = inputWeights, outputWeights = outputWeights, id = id}
+    return {inputWeights = inputWeights, id = id}--outputWeights = outputWeights, id = id}
 end
 
 -- Just copying our neuron.
@@ -61,14 +66,37 @@ function copyNeuron(neuron)
         local disabled = neuron.inputWeights[i].disabled
         inputWeights[i] = {value = w, from = from, disabled = disabled}
     end
-    for i = 1, #neuron.outputWeights do
-        local w = neuron.outputWeights[i].value
-        local to = neuron.outputWeights[i].to
-        local disabled = neuron.outputWeights[i].disabled
-        inputWeights[i] = {value = w, to = to, disabled = disabled}
-    end    
-    return {inputWeights = inputWeights, outputWeights = outputWeights, id = id}
+    --for i = 1, #neuron.outputWeights do
+    --    local w = neuron.outputWeights[i].value
+    --    local to = neuron.outputWeights[i].to
+    --    local disabled = neuron.outputWeights[i].disabled
+    --    inputWeights[i] = {value = w, to = to, disabled = disabled}
+    --end    
+    return {inputWeights = inputWeights, id = id}--outputWeights = outputWeights, id = id}
 end
+
+function getTransferFunction()
+    if transferFunction == 'ReLU' then
+        return function (x)
+            if x > 0 then
+                return x
+            else
+                return 0
+            end
+        end
+    end
+end
+
+function calculateOutputNeuron(neuron, input)
+    local w = 0
+    for i = 1, #input do
+        if (not neuron.inputWeights[i].disabled) then
+            w = w + input[i] * neuron.inputWeights[i].value
+        end
+    end
+    return getTransferFunction()(w)
+end
+        
     
 -- Function creates an empty neural network of wanted size, this is done only
 -- on the start, new networks are created as offspring, no network will be 
@@ -80,23 +108,27 @@ function createEmptyNN(inputCount, outputCount)
     local outputLayer = {}
     local inputIDs = {}
     for i = 1, inputCount do
-        inputIDS[i] = i
+        inputIDs[i] = i
     end
-    local outputIDs = {}
-    for i = 1, outputCount do
+    --local outputIDs = {}
+    --for i = 1, outputCount do
         -- Because output nodes will be after input nodes in our table
-        outputIDs[i] = inputCount + i
-    end
+    --    outputIDs[i] = inputCount + i
+    --end
     -- Creating input layer
     for i = 1, inputCount do
         -- Takes only one input it percieves, and output to all output nodes
-        inputLayer[i] = createEmptyNeuron(1, {1 = i}, outputCount, outputIDs, i)
+        local inIDs = {}
+        inIDs[1] = i
+        inputLayer[i] = createEmptyNeuron(1, inIDs, i) --outputCount, outputIDs, i)
     end
     -- Creating output layer
     for i = 1, outputCount do
         -- Connected to all inputs, and to only of it's output
-        outputLayer[i] = createEmptyNeuron(inputCount, inputIDs, 1, {1 = i}, 
-            i + inputCount)
+        --local outIDs = {}
+        --outIDs[1] = i + inputCount
+        outputLayer[i] = createEmptyNeuron(inputCount, inputIDs, i)--1, outIDs, 
+        --    i + inputCount)
     end
     -- Creating the genome for easier use of measurements and other control
     -- It keeps all of the connections of the neural network, it's pretty
@@ -104,11 +136,11 @@ function createEmptyNN(inputCount, outputCount)
     local genome = {}
     inventionCounter = 1
     -- The input Layer connections // The output connections are not included
-    for i = 1, #inputLayer do
-        for j = 1, #inputLayer[i].outputWeights do
-            genome[inventionCounter] = {from = inputLayer[i].id,
-                to = inputLayer[i].outputWeights[j].to, 
-                disabled = inputLayer[i].outputWeights[j].disabled}
+    for i = 1, #outputLayer do
+        for j = 1, #outputLayer[i].inputWeights do
+            genome[inventionCounter] = {from = outputLayer[i].inputWeights[j].from,
+                to = outputLayer[i].id, 
+                disabled = outputLayer[i].inputWeights[j].disabled}
             inventionCounter = inventionCounter + 1
         end
     end
@@ -127,8 +159,99 @@ end
 function createNewInvention()
 end
 
+
+
+Queue = {}
+function Queue.new ()
+    return {first = 0, last = -1}
+end
+
+function Queue.pushleft (queue, value)
+    local first = queue.first - 1
+    queue.first = first
+    queue[first] = value
+end
+
+function Queue.pushright (queue, value)
+    local queue = queue.last + 1
+    queue.last = last
+    queue[last] = value
+end
+
+function Queue.popleft (queue)
+    local first = queue.first
+    if first > queue.last then error("list is empty") end
+    local value = queue[first]
+    queue[first] = nil        -- to allow garbage collection
+    queue.first = first + 1
+    return value
+end
+
+function Queue.popright (queue)
+    local last = queue.last
+    if queue.first > last then error("list is empty") end
+    local value = queue[last]
+    queue[last] = nil         -- to allow garbage collection
+    queue.last = last - 1
+    return value
+end
+
+function Queue.isEmpty(queue)
+    if (first > last) then
+        return true
+    else
+        return false
+    end
+end
+
+
 -- This function calculates output of a network
-function calculateOutput(neuralNetwork, input)
+function calculateOutputNN(neuralNetwork, input)
+    local inputOutput = {}
+    for i = 1, #input do
+        local x = {}
+        x[1] = input[i]
+        -- Assuming that input size equals neuralNetwork inputLayer size
+        inputOutput[i] = 
+            calculateOutputNeuron(neuralNetwork.inputLayer[i], x)
+    end
+    if neuralNetwork.hiddenLayer ~= nil then
+        local q = Queue.new()
+        for i = 1, #neuralNetwork.hiddenLayer do
+            Queue.pushright(q, neuralNetwork[i])
+        end
+        while not Queue.isEmpty(q) do
+            local n = Queue.popleft(q)
+            local countable = true
+            for i = 1, #n.inputWeights do
+                if inputOutput[n.inputWeights[i].from] == nil then
+                    countable = false
+                    break
+                end
+            end
+            -- If not countable, we put it at the end
+            if not countable then
+                Queue.pushright(q, n)
+            else
+            -- It is countable, we count the activation and insert it
+                local x = {}
+                for i = 1, #n.inputWeights do
+                    x[i] = inputOutput[n.inputWeights[i].from]
+                end
+                inputOutput[n.id] = calculateOutputNeuron(n, x)
+            end
+        end
+    end
+    local output = {}
+    for i = 1, #neuralNetwork.outputLayer do
+        local x = {}
+        for j = 1, #neuralNetwork.outputLayer[i].inputWeights do
+            x[j] = inputOutput[
+                neuralNetwork.outputLayer[i].inputWeights[j].from]
+        end
+        output[i] = calculateOutputNeuron(neuralNetwork.outputLayer[i], x)
+    end
+    return output
 end
 
 -- This function calculates fitness of a network
@@ -152,5 +275,20 @@ end
 -- organism in the same species must share the fitness of their niche
 function createNewPopulation(previousPopulation)
 end
+
+-- This function is purely for testing of modules
+function testNN()
+    neuralNet = createEmptyNN(64, 4)
+    input = {}
+    for i = 1, 64 do
+        input[i] = 1
+    end
+    output = calculateOutputNN(neuralNet, input)
+    for i = 1, 4 do
+        print(output[i])
+    end
+end
+
+testNN()
 
 
