@@ -27,11 +27,12 @@ torch.manualSeed(1)
 
 inventionCounter = 1
 
+inventions = {}
+
 transferFunction = 'ReLU'
 
 -- This function create a new neuron that recieves input from inputCount neurons
--- and passes it to outputCount neurons
-function createEmptyNeuron(inputCount, inputIDs, id)--outputCount, outputIDs, id)
+function createEmptyNeuron(inputCount, inputIDs, id)
     -- Create weights, initialized with random value    
     local inputWeights = {}
     for i = 1, inputCount do
@@ -43,16 +44,9 @@ function createEmptyNeuron(inputCount, inputIDs, id)--outputCount, outputIDs, id
         local disabled = false
         inputWeights[i] = {value = w, from = from, disabled = disabled}
     end
-    --local outputWeights = {}
-    --for i = 1, outputCount do
-    --    local w = torch.random()
-    --    local to = outputIDs[i]
-    --    local disabled = false
-    --    outputWeights[i] = {value = w, to = to, disabled = disabled}
-    --end
     -- Setting up node id so we know know what are connections (and what is the
     -- structure of a neural network)
-    return {inputWeights = inputWeights, id = id}--outputWeights = outputWeights, id = id}
+    return {inputWeights = inputWeights, id = id}
 end
 
 -- Just copying our neuron.
@@ -65,15 +59,8 @@ function copyNeuron(neuron)
         local from = neuron.inputWeights[i].from
         local disabled = neuron.inputWeights[i].disabled
         inputWeights[i] = {value = w, from = from, disabled = disabled}
-    end
-    --for i = 1, #neuron.outputWeights do
-    --    local w = neuron.outputWeights[i].value
-    --    local to = neuron.outputWeights[i].to
-    --    local disabled = neuron.outputWeights[i].disabled
-    --    inputWeights[i] = {value = w, to = to, disabled = disabled}
-    --end    
-    return {inputWeights = inputWeights, id = id}--outputWeights = outputWeights, id = id}
-end
+    end  
+    return {inputWeights = inputWeights, id = id}
 
 function getTransferFunction()
     if transferFunction == 'ReLU' then
@@ -96,6 +83,14 @@ function calculateOutputNeuron(neuron, input)
     end
     return getTransferFunction()(w)
 end
+
+-- This function creates initial inventions // connections, from initial net
+function createInitialInventions(neuralNetwork)
+    for i = 1, #neuralNetwork.genome do
+        inventions[i] = {from = neuralNetwork.genome[i].from, 
+            to = neuralNetwork.genome[i].to}
+    end
+end
         
     
 -- Function creates an empty neural network of wanted size, this is done only
@@ -110,25 +105,17 @@ function createEmptyNN(inputCount, outputCount)
     for i = 1, inputCount do
         inputIDs[i] = i
     end
-    --local outputIDs = {}
-    --for i = 1, outputCount do
-        -- Because output nodes will be after input nodes in our table
-    --    outputIDs[i] = inputCount + i
-    --end
     -- Creating input layer
     for i = 1, inputCount do
         -- Takes only one input it percieves, and output to all output nodes
         local inIDs = {}
         inIDs[1] = i
-        inputLayer[i] = createEmptyNeuron(1, inIDs, i) --outputCount, outputIDs, i)
+        inputLayer[i] = createEmptyNeuron(1, inIDs, i)
     end
     -- Creating output layer
     for i = 1, outputCount do
         -- Connected to all inputs, and to only of it's output
-        --local outIDs = {}
-        --outIDs[1] = i + inputCount
-        outputLayer[i] = createEmptyNeuron(inputCount, inputIDs, i)--1, outIDs, 
-        --    i + inputCount)
+        outputLayer[i] = createEmptyNeuron(inputCount, inputIDs, i)
     end
     -- Creating the genome for easier use of measurements and other control
     -- It keeps all of the connections of the neural network, it's pretty
@@ -151,58 +138,17 @@ function createEmptyNN(inputCount, outputCount)
 end
 
 -- This function creates a neural network based on a genomes of parents
+-- Before calling this function we should check if the parents match.
 function createOffspringNN(fatherGenome, fatherFitness, motherGenome, 
     motherFitness)
+    
+    
 end
 
--- This function creates new gene invetion and assign to it a number
+-- This function creates new gene invention and assign to it a number
 function createNewInvention()
 end
 
-
-
-Queue = {}
-function Queue.new ()
-    return {first = 0, last = -1}
-end
-
-function Queue.pushleft (queue, value)
-    local first = queue.first - 1
-    queue.first = first
-    queue[first] = value
-end
-
-function Queue.pushright (queue, value)
-    local queue = queue.last + 1
-    queue.last = last
-    queue[last] = value
-end
-
-function Queue.popleft (queue)
-    local first = queue.first
-    if first > queue.last then error("list is empty") end
-    local value = queue[first]
-    queue[first] = nil        -- to allow garbage collection
-    queue.first = first + 1
-    return value
-end
-
-function Queue.popright (queue)
-    local last = queue.last
-    if queue.first > last then error("list is empty") end
-    local value = queue[last]
-    queue[last] = nil         -- to allow garbage collection
-    queue.last = last - 1
-    return value
-end
-
-function Queue.isEmpty(queue)
-    if (first > last) then
-        return true
-    else
-        return false
-    end
-end
 
 
 -- This function calculates output of a network
@@ -233,7 +179,7 @@ function calculateOutputNN(neuralNetwork, input)
             if not countable then
                 Queue.pushright(q, n)
             else
-            -- It is countable, we count the activation and insert it
+            -- It is countable, we count the output and insert it
                 local x = {}
                 for i = 1, #n.inputWeights do
                     x[i] = inputOutput[n.inputWeights[i].from]
@@ -278,13 +224,13 @@ end
 
 -- This function is purely for testing of modules
 function testNN()
-    neuralNet = createEmptyNN(64, 4)
+    neuralNet = createEmptyNN(4096, 64)
     input = {}
-    for i = 1, 64 do
-        input[i] = 1
+    for i = 1, 4096 do
+        input[i] = torch.uniform()
     end
     output = calculateOutputNN(neuralNet, input)
-    for i = 1, 4 do
+    for i = 1, 64 do
         print(output[i])
     end
 end
