@@ -26,8 +26,9 @@ end
 
 -- Returns chosen action by the neural network
 function getAction(output)
-    local max = 0
-    local maxi = 0
+    print(output)
+    local max = output[1]
+    local maxi = 1
     for i = 1, #classes do
         if (output[i] > max) then
             max = output[i]
@@ -72,18 +73,25 @@ function test(neuralNetwork, steps)
     while ((i <= steps) and (not endOfGame)) do
         -- Getting current state
         local state = gameDriver:getState(i)
-        -- Reshaping our vector so it fits our network
-        local input = image.scale(state.screenTensor, dimensions[2], 
-            dimensions[3])
-        input = (input:view(dimensions[1] * dimensions[2] * dimensions[3])):cl()
-        local output = neuralNetwork:forward(input)
-        -- Getting set of keys to press
-        local action = getAction(output)
-        -- Sending the keys
-        gameDriver:sendButtons(action)
-        -- Playing next frame
-        i = gameDriver:advanceToNextFrame(i)
-        -- Now we should evaluate our action
+        endOfGame = state.terminal
+        if (not endOfGame) then
+            -- Reshaping our vector so it fits our network
+            local input = image.scale(state.screenTensor, dimensions[2], 
+                dimensions[3])
+            input = (input:view(dimensions[1] * dimensions[2] * dimensions[3])):cl()
+            local output = neuralNetwork:forward(input)
+            -- Getting set of keys to press
+            local action = getAction(output)
+            -- Sending the keys
+            gameDriver:sendButtons(action)
+            -- Playing next frame
+            i = gameDriver:advanceToNextFrame(i)
+            -- Now we should evaluate our action
+        else 
+            -- Restarting game
+            endOfGame = false
+            gameDriver:loadSaveState()
+        end
     end
 end
 
@@ -93,4 +101,4 @@ function train(neuralNetwork, steps)
 end
 
 model = getNeuralNetwork():cl()
-test(model, 1000)
+test(model, 10000)

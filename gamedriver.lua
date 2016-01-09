@@ -129,6 +129,13 @@ function gameDriver:setMaxSpeed()
     emu.speedmode("maximum")
 end
 
+-- Starts new game, returns step counter
+function gameDriver:newGame()
+    gameDriver:loadSaveState()
+    return 1
+end
+
+
 --k=1
 --while true do
     -- Getting the state
