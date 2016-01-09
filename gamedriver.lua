@@ -1,7 +1,12 @@
+-- This program was written by Franciszek Jemioło
 -- In this file we declare all the functions to handle the game environment
 -- i.e. reading the score/input/saves
 require('gd')
+require('torch')
+require('cltorch')
 require('image')
+-- Setting float tensor as default for torch
+torch.setdefaulttensortype('torch.FloatTensor')
 gameDriver = {}
 
 -- The number of the slot used in emulator
@@ -108,18 +113,37 @@ function gameDriver:saveCurrentState(slot)
     savestate.persist(save)
 end
 
-k=1
-while true do
-    -- Getting the state
-    state = gameDriver:getState(k)
-    print(string.format("%d", state.score))
-    print(state.terminal)
-    -- Cleaning up previous step
-    if (k % 1000 == 0) then
-        gameDriver:cleanPreviousScreens(k-999, k)
-        print(cleaning)
-    end
-    k = k + 1
-    print(string.format("%d", k))
+-- Advancing to the next frame and increasing counter
+function gameDriver:advanceToNextFrame(step)
     emu.frameadvance()
+    return step + 1
 end
+
+-- This function send information to emulator that certain keys are pressed
+function gameDriver:sendButtons(input)
+    joypad.set(1, input)
+end
+
+-- Sets emulator speed mode to maximum
+function gameDriver:setMaxSpeed()
+    emu.speedmode("maximum")
+end
+
+--k=1
+--while true do
+    -- Getting the state
+--    state = gameDriver:getState(k)
+--    print(string.format("%d", state.score))
+--    print(state.terminal)
+    -- Reducing dimensions by 4 in width and height
+--    local tens = image.scale(state.screenTensor, 56, 64)
+--    image.save("1" .. screenshotName .. k .. screenshotType,tens)
+    -- Cleaning up previous step
+--    if (k % 1000 == 0) then
+--        gameDriver:cleanPreviousScreens(k-999, k)
+--        print(cleaning)
+--    end
+--    k = k + 1
+--    print(string.format("%d", k))
+--    emu.frameadvance()
+--end
