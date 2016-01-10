@@ -94,7 +94,9 @@ function GameDriver:getState(step)
     -- Is the state terminal? Meaning do we killed every enemy or we reached
     -- gameover?
     local terminal = self:isLevelWon() or self:isGameOver()
-    return {screenTensor=screenTensor, score=score, terminal=terminal}
+    local isLevelWon = self:isLevelWon()
+    return {screenTensor=screenTensor, score=score, terminal=terminal, 
+        isLevelWon=isLevelWon}
 end
 
 -- Removes all the screenshot created from start to stop

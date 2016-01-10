@@ -147,6 +147,8 @@ function DeepQNN:train(epochs, steps)
             -- And then we learn the minibatch by performing gradient descent
             self:qLearnMiniBatch()
         end
+        -- At the end of an epoch we save our network
+        self:saveNeuralNetwork()
     end
 end
 
