@@ -4,6 +4,14 @@ function ReplayMemory:__init(args)
 	self.maxSize = args.maxSize
 	self.numEntries = 0
 	self.insertIndex = 0
+	self.inputDim = args.inputDim
+	self.batchSize = args.batchSize
+
+	self.buf_input = torch.ByteTensor(self.batchSize):fill(0)
+	self.buf_input2 = torch.ByteTensor(self.batchSize):fill(0)
+	self.buf_action = torch.LongTensor(self.batchSize):fill(0)
+	self.buf_reward = torch.zeros(self.batchSize)
+	self.buf_term = torch.ByteTensor(self.batchSize)
 end
 
 -- Add transition into the table
@@ -26,23 +34,23 @@ function ReplayMemory:reset()
 	self.insertIndex = 0
 end
 
--- Returns mini batch of the given size
-function ReplayMemory:sample(batchSize)
-	local eps = batchSize / self.numEntries
+-- Returns mini batch
+function ReplayMemory:sample()
+	local index
+	local i
 	local numSamples = 0
-	local i = 1
-	samples = {}
-	while numSamples < batchSize do
-		if torch.uniform() < 0.3 then
-			numSamples = numSamples + 1
-			samples[numSamples] = ReplayMemory[i]
-		end
-		i = i + 1
-		if i > self.numEntries then
-			i = 1
-		end
+
+	while numSamples < self.batchSize do
+		i = torch.random(1, self.numEntries)
+		numSamples = numSamples + 1
+
+		buf_action[numSamples] = ReplayMemory[i].action
+		buf_reward[numSamples] = ReplayMemory[i].reward
+		buf_term[numSamples] = ReplayMemory[i].next_state.terminal
+		buf_input[numSamples] = ReplayMemory[i].start_state.screenTensor
+		buf_input2[numSamples] = ReplayMemory[i].next_state.screenTensor
 	end
-	return samples
+	return buf_action, buf_reward, buf_input, buf_input2, buf_term
 end
 
 -- Returns last transition
