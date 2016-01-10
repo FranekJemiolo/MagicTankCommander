@@ -19,7 +19,6 @@ DeepQNN = {}
 
 DeepQNN.__index = DeepQNN
 
-
 function DeepQNN.create()
     local dpqnn = {}
     setmetatable(dpqnn, DeepQNN)
@@ -38,9 +37,10 @@ function DeepQNN:__init(args)
 	self.replayMemory = ReplayMemory({maxSize = 1000,
 									  inputDim = 3*56*64,
 									  batchSize = 100})
-	self.replayCounter = 1
-	self.min_reward = -100
-	self.max_reward = 100
+	self.max_reward = 10000
+	self.min_reward = -self.max_reward
+	self.win_bonus = 3000
+	self.time_penalty = 5
 
 	-- auxiliary variables
 	selfw, self.dw = self.network:getParameters()
@@ -145,8 +145,6 @@ function DeepQNN:train(epochs, steps)
         self.gameDriver:loadSaveState()
         -- Getting initial state at time 1
         local start_state = self.gameDriver:getState(t)
-		-- Forward the state through the network to get the q value
-		self:updateQValues()
         local t = 1
         while (t <= steps) do
             -- Choosing action based on eGreedy alg/ here we calculate reward
@@ -157,6 +155,7 @@ function DeepQNN:train(epochs, steps)
             t = self.gameDriver:advanceToNextFrame(t)
             -- Get the state at time t + 1
             local next_state = self.gameDriver:getState(t)
+			local reward = self.countReward(start_state, next_state)
             -- Save in replay memory the transition
 			self.replayMemory:add({start_state=start_state, 
                 action=action, reward=reward, next_state=next_state})
@@ -164,6 +163,7 @@ function DeepQNN:train(epochs, steps)
             self:createRandomMiniBatch()
             -- And then we learn the minibatch by performing gradient descent
             self:qLearnMiniBatch()
+			start_state = next_state
         end
         -- At the end of an epoch we save our network
         self:saveNeuralNetwork()
@@ -281,25 +281,25 @@ function DeepQNN:createRandomMiniBatch()
 end
 
 -- Returns reward for the choosen action
-function DeepQNN:countReward()
-	local won_level_reward = self.max_reward
-	local game_over_reward = self.min_reward
-	local time_pentaly = -1
+function DeepQNN:countReward(startState, nextState)
 	local reward = 0
 
-	local last_entry = self.replayMemory:lastTransition()
-	local delta_score = last_entry.next_state - last_entry.start_state
-
-	reward = delta_score + time_pentaly
-	if last_entry.next_state.terminal then
-		if last_entry.next_state.isLevelWon then
-			reward = reward + won_level_reward
+	-- when game over return -1
+	if nextState.terminal then
+		if not nextState.isLevelWon then
+			return -1
 		else
-			reward = reward + game_over_reward
+			reward = reward + self.win_bonus
 		end
 	end
 
-	return reward / (self.max_reward - self.min_reward)
+	local delta_score = nextState.score - startState.score
+	reward = delta_score + self.time_pentaly
+
+	reward = math.min(self.max_reward, reward)
+	reward = math.max(self.min_reward, reward)
+
+	return reward / self.max_reward
 end
 
 net = DeepQNN.create()
