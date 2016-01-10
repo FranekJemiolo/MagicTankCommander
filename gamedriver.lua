@@ -7,17 +7,28 @@ require('cltorch')
 require('image')
 -- Setting float tensor as default for torch
 torch.setdefaulttensortype('torch.FloatTensor')
-gameDriver = {}
+GameDriver = {}
 
--- The number of the slot used in emulator
-predefinedSaveSlot = 1
+GameDriver.__index = GameDriver
 
--- Screenshot base name
-screenshotName = "screen"
-screenshotType = ".png"
+-- Constructor of GameDriver
+function GameDriver.create()
+    local gameDr = {}
+    setmetatable(gameDr, GameDriver)
+    return gameDr
+end
+
+function GameDriver:__init()
+    -- The number of the slot used in emulator
+    self.predefinedSaveSlot = 1
+    -- Screenshot base name
+    self.screenshotName = "screen"
+    self.screenshotType = ".png"
+end
+
 
 -- Checks how many life we still have (>0 at level won then we win)
-function getLives()
+function GameDriver:getLives()
     local livesByte = memory.readbyte(0x003B)
     local livesString = string.format("%02X", livesByte)
     livesString = string.format("%u", livesString)
@@ -25,7 +36,7 @@ function getLives()
 end
 
 -- Checks if we killed all tanks
-function isLevelWon()
+function GameDriver:isLevelWon()
     -- Always 20 tanks spawned in a level
     local tanksBytes = {}
     -- Read how many tanks did we kill of 4 types each.
@@ -42,7 +53,7 @@ function isLevelWon()
 end
 
 -- Checks if game over happend
-function isGameOver()
+function GameDriver:isGameOver()
     -- Read from the memory has the game over happend?
     local gameOverByte = memory.readbyte(0x0108)
     -- Remove leading zeroes
@@ -51,7 +62,7 @@ function isGameOver()
 end
 
 -- Returns the user score.
-function getScore()
+function GameDriver:getScore()
     -- Reading 4 bytes of memory where the score is kept
     local scoreBytes = {}
     scoreBytes[1] = memory.readbyte(0x0017)
@@ -70,42 +81,42 @@ end
 -- This function returns current state in which the game is.
 -- Returns the rawimage input, current score, is the game over or level has 
 -- ended. Save a screenshot with the "step" number concatenated.
-function gameDriver:getState(step)
+function GameDriver:getState(step)
     -- Creating the gd image object from the emulator api.
     local gdScreenshot = gd.createFromGdStr(gui.gdscreenshot())
     -- Saving the screenshot as png
-    gdScreenshot:png(screenshotName .. step .. screenshotType)
+    gdScreenshot:png(self.screenshotName .. step .. self.screenshotType)
     -- Loading raw png as torch tensor
-    local screenTensor = image.load(screenshotName .. step .. screenshotType, 3,
-        'float')
+    local screenTensor = image.load(self.screenshotName .. step .. 
+        self.screenshotType, 3, 'float')
     -- Reading the current score
-    local score = getScore()
+    local score = self:getScore()
     -- Is the state terminal? Meaning do we killed every enemy or we reached
     -- gameover?
-    local terminal = isLevelWon() or isGameOver()
+    local terminal = self:isLevelWon() or self:isGameOver()
     return {screenTensor=screenTensor, score=score, terminal=terminal}
 end
 
 -- Removes all the screenshot created from start to stop
-function gameDriver:cleanPreviousScreens(start, stop)
-    os.execute("rm -f /home/franek/JNP3/".. screenshotName .. "{" .. 
-        start .. ".." .. stop .. "}" .. screenshotType)
+function GameDriver:cleanPreviousScreens(start, stop)
+    os.execute("rm -f /home/franek/JNP3/".. self.screenshotName .. "{" .. 
+        start .. ".." .. stop .. "}" .. self.screenshotType)
 end
 
 
 
 -- Loads given save or the initial from predefined slot.
-function gameDriver:loadSaveState(save)
+function GameDriver:loadSaveState(save)
     if save == nil then
-        save = savestate.object(predefinedSaveSlot)
+        save = savestate.object(self.predefinedSaveSlot)
     end
     savestate.load(save)
 end
 
 -- Saves in the given slot (1--9)
-function gameDriver:saveCurrentState(slot)
+function GameDriver:saveCurrentState(slot)
     if slot == nil then
-        save = savestate.object(predefinedSaveSlot)
+        save = savestate.object(self.predefinedSaveSlot)
     else
         save = savestate.object(slot)
     end
@@ -114,24 +125,24 @@ function gameDriver:saveCurrentState(slot)
 end
 
 -- Advancing to the next frame and increasing counter
-function gameDriver:advanceToNextFrame(step)
+function GameDriver:advanceToNextFrame(step)
     emu.frameadvance()
     return step + 1
 end
 
 -- This function send information to emulator that certain keys are pressed
-function gameDriver:sendButtons(input)
+function GameDriver:sendButtons(input)
     joypad.set(1, input)
 end
 
 -- Sets emulator speed mode to maximum
-function gameDriver:setMaxSpeed()
+function GameDriver:setMaxSpeed()
     emu.speedmode("maximum")
 end
 
 -- Starts new game, returns step counter
-function gameDriver:newGame()
-    gameDriver:loadSaveState()
+function GameDriver:newGame()
+    self:loadSaveState()
     return 1
 end
 
