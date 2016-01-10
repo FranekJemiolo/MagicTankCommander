@@ -6,6 +6,7 @@ require('nn')
 require('clnn')
 require('image')
 require('gamedriver')
+require('replay_memory')
 -- Setting float tensor as default for torch
 torch.setdefaulttensortype('torch.FloatTensor')
 -- The dimensions of the images percieved by our network
@@ -18,6 +19,7 @@ DeepQNN = {}
 
 DeepQNN.__index = DeepQNN
 
+
 function DeepQNN.create()
     local dpqnn = {}
     setmetatable(dpqnn, DeepQNN)
@@ -28,6 +30,10 @@ function DeepQNN:__init(args)
     self.model = self:getNeuralNetwork():cl()
     self.gameDriver = GameDriver.create()
     self.gameDriver:__init()
+	self.discount = args.discount
+	self.replayMemory = ReplayMemory
+	self.replayCounter = 1
+	self.minibatchSize = args.minibatchSize
 end
 
 
@@ -114,12 +120,39 @@ function DeepQNN:test(steps)
     end
 end
 
+function DeepQNN:qLearnMiniBatch()
+	self.miniBatch = {}
+	local y = nil
+	local w = nil
+	local x = nil
+	local gradient = 0
+
+	for i = 1,#self.miniBatch do
+		x = self.miniBatch[i]
+		local output = self.model:forward(x.next_state)
+		if x.next_state.terminal then
+			y = x.reward
+		else
+			local max = output[1]
+			for i = 1,#classes do
+				if (output[i] > max) then
+					max = output[i]
+				end
+			end
+			y = x.reward + self.discount * max
+		end
+		w = output[x.action]
+		-- gradient = gradient + (y - w)*
+		-- compute component of subtotal gradient
+
+	end
+
+end
+
 -- In this function we train our network based on the Q-Learning algorithm
 -- The steps count is for how many frames will it play
 function DeepQNN:train(epochs, steps)
     -- Perform #epochs when training, at the end of every epoch save our network
-    self.replayMemory = {}
-    self.replayCounter = 1
     for i = 1, epochs do
         -- Loading initial save state
         self.gameDriver:loadSaveState()
@@ -138,10 +171,8 @@ function DeepQNN:train(epochs, steps)
             -- Get the state at time t + 1
             local next_state = self.gameDriver:getState(t)
             -- Save in replay memory the transition
-            self.replayMemory[replayCounter] = {start_state=start_state, 
-                action=action, reward=reward, next_state=next_state}
-            -- Increase replay counter
-            self.replayCounter = self.replayCounter + 1
+			self.replayMemory:add({start_state=start_state, 
+                action=action, reward=reward, next_state=next_state})
             -- Now we create random minibatch of transitions from replayMEmory
             self:createRandomMiniBatch()
             -- And then we learn the minibatch by performing gradient descent
@@ -162,6 +193,13 @@ end
 
 -- Returns an action based on the greedy alg
 function DeepQNN:greedyLearn()
+	if torch.uniform() < self.epsilon then
+		return self.getAction(torch.random(#self.classes))
+	else
+		local last_entry = self.replayMemory:lastTransition()
+		local output = self.model:forward(last_entry.next_state)
+		return self.getAction(output)
+	end
 end
 
 -- Learn from previous transitions
@@ -170,6 +208,33 @@ end
 
 function DeepQNN:saveNeuralNetwork()
 end
+
+function DeepQNN:createRandomMiniBatch()
+	self.minibatch = self.replayMemory.sample(self.minibatchSize)
+end
+
+-- Returns reward for the choosen action
+function DeepQNN:countReward()
+	local won_level_reward = 1000
+	local game_over_reward = -1000
+	local time_pentaly = -1
+	local reward = 0
+
+	local last_entry = self.replayMemory:lastTransition()
+	local delta_score = last_entry.next_state - last_entry.start_state
+
+	reward = delta_score + time_pentaly
+	if last_entry.next_state.terminal then
+		if last_entry.next_state.isLevelWon then
+			reward = reward + won_level_reward
+		else
+			reward = reward + game_over_reward
+		end
+	end
+
+	return reward
+end
+
 
 net = DeepQNN.create()
 net:__init()
