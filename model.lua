@@ -136,35 +136,6 @@ function DeepQNN:test(steps)
     end
 end
 
-function DeepQNN:qLearnMiniBatch()
-	self.miniBatch = {}
-	local y = nil
-	local w = nil
-	local x = nil
-	local gradient = 0
-
-	for i = 1,#self.miniBatch do
-		x = self.miniBatch[i]
-		local output = self.model:forward(x.next_state)
-		if x.next_state.terminal then
-			y = x.reward
-		else
-			local max = output[1]
-			for i = 1,#classes do
-				if (output[i] > max) then
-					max = output[i]
-				end
-			end
-			y = x.reward + self.discount * max
-		end
-		w = output[x.action]
-		-- gradient = gradient + (y - w)*
-		-- compute component of subtotal gradient
-
-	end
-
-end
-
 -- In this function we train our network based on the Q-Learning algorithm
 -- The steps count is for how many frames will it play
 function DeepQNN:train(epochs, steps)
