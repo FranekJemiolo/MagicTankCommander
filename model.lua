@@ -8,10 +8,6 @@ require('image')
 require('gamedriver')
 -- Setting float tensor as default for torch
 torch.setdefaulttensortype('torch.FloatTensor')
--- The dimensions of the images percieved by our network
-dimensions = {3, 56, 64}
--- 6 classes because we have 6 action buttons
-classes = {1, 2, 3, 4, 5, 6}
 
 -- Creating our class
 DeepQNN = {}
@@ -25,7 +21,13 @@ function DeepQNN.create()
 end
 
 function DeepQNN:__init(args)
+    self.modelFilename = "model"--args.modelFilename or "model"
+    -- The dimensions of the images percieved by our network
+    self.dimensions = {3, 56, 64}
+    -- 6 classes because we have 6 action buttons
+    self.classes = {1, 2, 3, 4, 5, 6}
     self.model = self:getNeuralNetwork():cl()
+    self.passedEpochs = 0
     self.gameDriver = GameDriver.create()
     self.gameDriver:__init()
 end
@@ -35,9 +37,10 @@ end
 function DeepQNN:getNeuralNetwork(hidden)
     local hus = hidden or 4096
     local net = nn.Sequential()
-    net:add(nn.Linear(dimensions[1] * dimensions[2] * dimensions[3], hus))
+    net:add(nn.Linear(self.dimensions[1] * self.dimensions[2] * 
+        self.dimensions[3], hus))
     net:add(nn.Tanh())
-    net:add(nn.Linear(hus, #classes))
+    net:add(nn.Linear(hus, #self.classes))
     net:add(nn.LogSoftMax())
     return net
 end
@@ -47,7 +50,7 @@ function DeepQNN:getAction(output)
     print(output)
     local max = output[1]
     local maxi = 1
-    for i = 1, #classes do
+    for i = 1, #self.classes do
         if (output[i] > max) then
             max = output[i]
             maxi = i
@@ -94,10 +97,10 @@ function DeepQNN:test(steps)
         endOfGame = state.terminal
         if (not endOfGame) then
             -- Reshaping our vector so it fits our network
-            local input = image.scale(state.screenTensor, dimensions[2], 
-                dimensions[3])
-            input = (input:view(
-                dimensions[1] * dimensions[2] * dimensions[3])):cl()
+            local input = image.scale(state.screenTensor, self.dimensions[2], 
+                self.dimensions[3])
+            input = (input:view(self.dimensions[1] * 
+                self.dimensions[2] * self.dimensions[3])):cl()
             local output = self.model:forward(input)
             -- Getting set of keys to press
             local action = self:getAction(output)
@@ -147,13 +150,19 @@ function DeepQNN:train(epochs, steps)
             -- And then we learn the minibatch by performing gradient descent
             self:qLearnMiniBatch()
         end
+        -- How many epochs of learning a net has passed
+        self.passedEpochs = i
         -- At the end of an epoch we save our network
         self:saveNeuralNetwork()
     end
 end
 
+-- Creates minibatch to be learnt
+function createRandomMiniBatch()
+end
+
 -- Forwards the input through neural network to update Q values
-function DeepQNN:updateQValues()
+function DeepQNN:updateQValues(args)
 end
 
 -- Returns an action based on the epsilon greedy alg
@@ -169,8 +178,14 @@ function DeepQNN:qLearnMiniBatch()
 end
 
 function DeepQNN:saveNeuralNetwork()
+    torch.save(self.modelFilename .. ".t7", {
+        model = self.model,
+        replay_memory = self.replayMemory,
+        replay_counter = self.replayCounter,
+        epochs = self.passedEpochs
+    })
 end
 
 net = DeepQNN.create()
 net:__init()
-net:test(10000)
+net:test(1000)
