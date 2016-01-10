@@ -27,13 +27,27 @@ function DeepQNN.create()
 end
 
 function DeepQNN:__init(args)
+	self.discount = args.discount
+	self.minibatchSize = args.minibatchSize
+	self.l2 = args.l2 -- L2 cost
+	self.learning_rate = args.learning_rate
+
     self.model = self:getNeuralNetwork():cl()
     self.gameDriver = GameDriver.create()
     self.gameDriver:__init()
-	self.discount = args.discount
-	self.replayMemory = ReplayMemory
+	self.replayMemory = ReplayMemory({maxSize = 1000,
+									  inputDim = 3*56*64,
+									  batchSize = 100})
 	self.replayCounter = 1
-	self.minibatchSize = args.minibatchSize
+	self.min_reward = -100
+	self.max_reward = 100
+
+	-- auxiliary variables
+	selfw, self.dw = self.network:getParameters()
+	self.deltas = self.dw.clone():fill(0)
+	self.tmp = self.dw:clone():fill(0)
+	self.g = self.dw:clone():fill(0)
+	self.g2 = self.dw:clone():fill(0)
 end
 
 
@@ -104,6 +118,8 @@ function DeepQNN:test(steps)
                 dimensions[3])
             input = (input:view(
                 dimensions[1] * dimensions[2] * dimensions[3])):cl()
+			-- update state
+			state.screenTensor = input
             local output = self.model:forward(input)
             -- Getting set of keys to press
             local action = self:getAction(output)
@@ -158,8 +174,8 @@ function DeepQNN:train(epochs, steps)
         self.gameDriver:loadSaveState()
         -- Getting initial state at time 1
         local start_state = self.gameDriver:getState(t)
-        -- Forward the state through the network to get the q value
-        self:updateQValues()
+		-- Forward the state through the network to get the q value
+		self:updateQValues()
         local t = 1
         while (t <= steps) do
             -- Choosing action based on eGreedy alg/ here we calculate reward
@@ -173,7 +189,7 @@ function DeepQNN:train(epochs, steps)
             -- Save in replay memory the transition
 			self.replayMemory:add({start_state=start_state, 
                 action=action, reward=reward, next_state=next_state})
-            -- Now we create random minibatch of transitions from replayMEmory
+            -- Now we create random minibatch of transitions from replayMemory
             self:createRandomMiniBatch()
             -- And then we learn the minibatch by performing gradient descent
             self:qLearnMiniBatch()
@@ -185,38 +201,118 @@ end
 
 -- Forwards the input through neural network to update Q values
 function DeepQNN:updateQValues()
+	local s, a, r, t, s2, delta
+	local q, q2, q2_max
+
+	s = self.minibatch.s
+	a = self.minibatch.a
+	r = self.minibatch.r
+	t = self.minibatch.t
+	s2 = self.minibatch.s2
+
+	-- t[i] := s2[i] is terminate
+	t = t:clone():float():mul(-1):add(1)
+
+	-- compute max_a Q(s2, a) for each state in s2
+	q2_max = self.model:forward(s2):float():max(2)
+
+	-- compute q2 = (1-terminal) * gamma * max_a Q(s2, a)
+	q2 = a2_max:clone():mul(self.discount):cmul(term)
+
+	-- compute delta = r + (1-terminal) * gamma * max_a Q(s2, a)
+	delta = r:clone():float()
+	delta:add(q2)
+
+	-- compute q = Q(s,a)
+	local q_all = self.model:forward(s):float()
+	q = torch.FloatTensor(q_all:size(1))
+	for i = 1,q_all:size(1) do
+		q[i] = q_all[i][a[i]]
+	end
+	delta:add(-1, q)
+
+	local targets = torch.zeros(self.minibatchSize, #classes):float()
+	for i=1,math.min(self.minibatch_size,a:size(1)) do
+		targets[i][a[i]] = delta[i]
+	end
+
+	-- store computed data
+	self.targets = targets
+	self.delta = delta
+	self.q2_max = q2_max
 end
 
 -- Returns an action based on the epsilon greedy alg
 function DeepQNN:eGreedyLearn()
+	-- update state
+	local input = image.scale(state.screenTensor, dimensions[2], 
+		dimensions[3])
+	input = (input:view(
+		dimensions[1] * dimensions[2] * dimensions[3])):cl()
+	state.screenTensor = input
+
+	if torch.uniform() < self.epsilon then
+		return self.getAction(torch.random(#self.classes))
+	else
+		return self.greedyLearn()
+	end
 end
 
 -- Returns an action based on the greedy alg
 function DeepQNN:greedyLearn()
-	if torch.uniform() < self.epsilon then
-		return self.getAction(torch.random(#self.classes))
-	else
-		local last_entry = self.replayMemory:lastTransition()
-		local output = self.model:forward(last_entry.next_state)
-		return self.getAction(output)
-	end
+	local last_entry = self.replayMemory:lastTransition()
+	local output = self.model:forward(last_entry.next_state)
+	return self.getAction(output)
 end
 
 -- Learn from previous transitions
 function DeepQNN:qLearnMiniBatch()
+	local s, a, r, s2, t
+
+	s = self.minibatch.s
+	a = self.minibatch.a
+	r = self.minibatch.r
+	t = self.minibatch.t
+	s2 = self.minibatch.s2
+
+	local targets, delta, q2_max = self.updateQValues()
+
+	-- zero gradients parameters
+	self.dw:zero()
+
+	-- get new gradient
+	self.model:backward(s, targest)
+
+	-- add weight cost to gradient
+	self.dw:add(-self.l2, self.w)
+
+	-- use gradients
+	self.g:mul(0.95):add(0.05, self.dw)
+	self.tmp:dmul(self.dw, self.dw)
+	self.g2:mul(0.95):add(0.05, self.tmp)
+	self.tmp:cmul(self.g, self.g)
+	self.tmp:mul(-1)
+	self.tmp:add(self.g2)
+	aself.tmp:add(0.01)
+	self.tmp:sqrt()
+
+	-- accumulate update
+	self.deltas:mul(0):addcdiv(self.lr, self.dw, self.tmp)
+	self.w:add(self.deltas)
 end
 
 function DeepQNN:saveNeuralNetwork()
 end
 
 function DeepQNN:createRandomMiniBatch()
-	self.minibatch = self.replayMemory.sample(self.minibatchSize)
+	local a, r, s, s2, t = self.replayMemory.sample()
+	self.minibatch = {a=a, r=r, s=s, s2=s2, t=t}
 end
 
 -- Returns reward for the choosen action
 function DeepQNN:countReward()
-	local won_level_reward = 1000
-	local game_over_reward = -1000
+	local won_level_reward = self.max_reward
+	local game_over_reward = self.min_reward
 	local time_pentaly = -1
 	local reward = 0
 
@@ -232,9 +328,8 @@ function DeepQNN:countReward()
 		end
 	end
 
-	return reward
+	return reward / (self.max_reward - self.min_reward)
 end
-
 
 net = DeepQNN.create()
 net:__init()
