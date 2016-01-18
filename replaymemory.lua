@@ -25,8 +25,8 @@ function ReplayMemory:__init(args)
 	self.batchSize = args.batchSize
 
 
-	self.buf_input = torch.Tensor(self.batchSize, 3, 56, 64):fill(0)
-	self.buf_input2 = torch.Tensor(self.batchSize, 3, 56, 64):fill(0)
+	self.buf_input = torch.Tensor(self.batchSize, 3, 112, 112):fill(0)
+	self.buf_input2 = torch.Tensor(self.batchSize, 3, 112, 112):fill(0)
 	self.buf_action = torch.Tensor(self.batchSize):fill(0)
 	self.buf_reward = torch.Tensor(self.batchSize):fill(0)
 	self.buf_term = torch.Tensor(self.batchSize):fill(0)
@@ -60,7 +60,7 @@ function ReplayMemory:sample()
 		local i
 		local numSamples = 0
 
-		while (numSamples < ((self.batchSize) - 1)) do
+		while (numSamples < ((self.batchSize))) do
 			i = torch.random(1, self.numEntries)
 			numSamples = numSamples + 1
 			self.buf_action[numSamples] = self.entries[i].action
@@ -73,14 +73,14 @@ function ReplayMemory:sample()
 				self.entries[i].next_state.screenTensor:clone()
 		end
 
-		self.buf_action[self.batchSize] = self.entries[self.insertIndex].action
-		self.buf_reward[self.batchSize] = self.entries[self.insertIndex].reward
-		self.buf_term[self.batchSize] = 
-			boolToNum(self.entries[self.insertIndex].next_state.terminal)
-		self.buf_input[self.batchSize] = 
-			self.entries[self.insertIndex].start_state.screenTensor:clone()
-		self.buf_input2[self.batchSize] = 
-			self.entries[self.insertIndex].next_state.screenTensor:clone()
+		--self.buf_action[self.batchSize] = self.entries[self.insertIndex].action
+		--self.buf_reward[self.batchSize] = self.entries[self.insertIndex].reward
+		--self.buf_term[self.batchSize] = 
+		--	boolToNum(self.entries[self.insertIndex].next_state.terminal)
+		--self.buf_input[self.batchSize] = 
+		--	self.entries[self.insertIndex].start_state.screenTensor:clone()
+		--self.buf_input2[self.batchSize] = 
+		--	self.entries[self.insertIndex].next_state.screenTensor:clone()
 
 
 		return self.buf_action, self.buf_reward, self.buf_input, 

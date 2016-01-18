@@ -47,7 +47,11 @@ function GameDriver:isLevelWon()
     local tanksStrings = {}
     for i=1,4 do
         tanksStrings[i] = string.format("%02X", tanksBytes[i])
+        if (tonumber(tanksStrings[i]) == nil) then
+            return false
+        end
     end
+
     return (tonumber(tanksStrings[1]) + tonumber(tanksStrings[2]) + 
         tonumber(tanksStrings[3]) + tonumber(tanksStrings[4]) >= 20)
 end
@@ -88,7 +92,8 @@ function GameDriver:getState(step)
     gdScreenshot:png(self.screenshotName .. step .. self.screenshotType)
     -- Loading raw png as torch tensor
     local screenTensor = image.scale(image.load(self.screenshotName .. step .. 
-        self.screenshotType, 3, 'float'), 56, 64)
+        self.screenshotType, 3, 'float'), 112, 112)
+    --image.save("1screen" .. step .. ".png", screenTensor)
     -- Reading the current score
     local score = self:getScore()
     -- Is the state terminal? Meaning do we killed every enemy or we reached
