@@ -90,6 +90,27 @@ function ReplayMemory:sample()
 	end
 end
 
+-- Returns mini batch of replay memory from frame to frame
+function ReplayMemory:getMinibatch(start)
+	if (start + self.batchSize - 1 > self.numEntries ) then
+		return nil
+	else
+
+		for i = 1, self.batchSize do
+			self.buf_action[i] = self.entries[i + start - 1].action
+			self.buf_reward[i] = self.entries[i + start - 1].reward
+			self.buf_term[i] = 
+				boolToNum(self.entries[i + start - 1].next_state.terminal)
+			self.buf_input[i] = 
+				self.entries[i + start - 1].start_state.screenTensor:clone()
+			self.buf_input2[i] = 
+				self.entries[i + start - 1].next_state.screenTensor:clone()
+		end
+		return self.buf_action, self.buf_reward, self.buf_input, 
+			self.buf_input2, self.buf_term
+	end
+end
+
 -- Returns last transition
 function ReplayMemory:lastTransition()
 	if (self.insertIndex >= 1) then

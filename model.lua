@@ -34,19 +34,19 @@ function DeepQNN:__init(args)
     self.modelBackupFilename = ((args.modelFilename ) or "model") .."-backup"
     -- Parametrs of Q function
 	self.discount = args.discount or 0.99
-	self.minibatchSize = args.minibatchSize or 15
+	self.minibatchSize = args.minibatchSize or 32
     -- How many frames must pass for us to learn again qLearnMiniBatch
     self.minibatchLearnRate = 1
     self.replayMemoryMaxSize = 50000
     self.minibatchCounter = 0
 	self.l2 = args.l2 or 0.000001-- L2 cost 
-	self.learning_rate_start = args.learning_rate or 0.00001
+	self.learning_rate_start = args.learning_rate or 0.000025
     self.learning_rate = self.learning_rate_start 
-    self.learning_rate_end = args.learning_rate_end or 0.000001
+    self.learning_rate_end = args.learning_rate_end or 0.000025
     self.learning_rate_endt = args.lr_endt or 2000000
     self.epsilon = 0.5
     --self.levelScale = 0.01
-    self.levelScale = 0.01
+    self.levelScale = 0.1
     self.steps = 0
     --self.stepW = 0.000001
     self.stepW = 0.00001
@@ -81,11 +81,11 @@ function DeepQNN:__init(args)
     self.gameDriver:setMaxSpeed()
 
     -- Max rewards
-	self.maxReward = 500
+	self.maxReward = 1000
 	self.minReward = -self.maxReward
     -- Bonus points and time penalty
 	self.winBonus = self.maxReward
-	self.timePenalty = 0
+	self.timePenalty = -5
     -- Reward range (-a, a), used for scaling reward
     self.rewardRange = 1
 
@@ -240,9 +240,47 @@ function DeepQNN:test(steps)
     end
 end
 
+
 -- We are checking the error on whole memory.
 function DeepQNN:testWholeReplayMemory()
+    print("Testing...")
+    local l = 1
+    local k = 0
+    local all = false
+    local accMinErr = 10000000
+    local accMaxErr = 0
+    local accMeanErr = 0
+    local accSumErr = 0
+    while(not all) do
+        collectgarbage()
+        local a, r, s, s2, t = self.replayMemory:getMinibatch(l)
+        xlua.progress(l, self.replayMemory.numEntries)
+        if a == nil then
+            all = true
+        else
+            self.minibatch = {a=a, r=r, s=s, s2=s2, t=t}
+            local targets, delta, q2Max = self:updateQValues()
+            accMinErr = math.min(accMinErr, delta:clone():abs():min())
+            accMaxErr = math.max(accMaxErr, delta:clone():abs():max())
+            accMeanErr = accMeanErr + delta:clone():abs():mean()
+            accSumErr = accSumErr + delta:clone():abs():sum()
+            k = k + 1
+            l = l + self.minibatchSize
+        end
+    end
+    xlua.progress(self.replayMemory.numEntries, self.replayMemory.numEntries)
+    accMeanErr = accMeanErr / k
+    local f = io.open("error-logs.txt", "a")
+    f:write("Epoch : " .. self.passedEpochs .. 
+        " , Step: " .. self.steps .. ", Mean:" ..
+        accMeanErr .. ", Min: " .. 
+        accMinErr .. ", Max: " ..
+        accMaxErr .. ", Sum: " .. 
+        accSumErr .. "\n")
+    f:close()
 end
+
+
 
 -- Calculates the mean answer on the samples
 function DeepQNN:updateStatistics()
@@ -340,6 +378,7 @@ function DeepQNN:train(epochs, steps)
         -- At the end of an epoch we save our network
         print("Passed epoch : " .. self.passedEpochs)
         self:saveNeuralNetwork()
+        self:testWholeReplayMemory()
         collectgarbage()
     end
 end
@@ -442,9 +481,9 @@ function DeepQNN:qLearnMiniBatch()
     self.learning_rate = math.max(self.learning_rate, self.learning_rate_end)
 
 	-- Using gradients RMSprop
-	self.g:mul(0.98):add(0.02, self.dw)
+	self.g:mul(0.9):add(0.1, self.dw)
 	self.tmp:cmul(self.dw, self.dw)
-	self.g2:mul(0.98):add(0.02, self.tmp)
+	self.g2:mul(0.9):add(0.1, self.tmp)
 	self.tmp:cmul(self.g, self.g)
 	self.tmp:mul(-1)
 	self.tmp:add(self.g2)
@@ -518,12 +557,11 @@ function DeepQNN:countReward(startState, nextState)
 
 	-- when game over return -1
 	if nextState.terminal then
-		--if not nextState.isLevelWon then
-		--	return -1 * self.rewardRange
-		--else
-		--	reward = self.winBonus
-		--end
-        return 0
+		if not nextState.isLevelWon then
+			return -1 * self.rewardRange
+		else
+			reward = self.winBonus
+		end
 	end
 
 	local delta_score = nextState.score - startState.score
@@ -535,7 +573,7 @@ function DeepQNN:countReward(startState, nextState)
 end
 
 net = DeepQNN.create()
-args = {modelFilename="model11"}--{load=true}--{modelFilename="model9", load=true}---{modelFilename="model9"}--{load=true}--modelFilename="model5",  load=true}--{load=true} -- {}
+args = {modelFilename="model14"}--, load=true}--{modelFilename="model9", load=true}---{modelFilename="model9"}--{load=true}--modelFilename="model5",  load=true}--{load=true} -- {}
 net:__init(args)
-net:train(10000,1000)
+net:train(100000,10000)
 --net:test(10000)
