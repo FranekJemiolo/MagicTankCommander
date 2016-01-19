@@ -1,8 +1,8 @@
 -- This program was written by Franciszek Jemioło
 -- In this file I declare the model of the network.
 require('torch')
-require('cltorch')
 require('nn')
+require('cltorch')
 require('clnn')
 require('image')
 require('gamedriver')
@@ -25,24 +25,25 @@ end
 function DeepQNN:__init(args)
     -- The dimensions of the images percieved by our network
     self.dimensions = {3, 112, 112}
-    -- 6 classes because we have 6 action buttons
+    -- 7 classes because we have 6 action buttons and last does nothing
     self.classes = {1, 2, 3, 4, 5, 6, 7}
 
     -- On how many epochs the net was trained
     self.passedEpochs = 0
     self.modelFilename = args.modelFilename or "model"
+    self.modelFilenameLoad = args.modelFilenameLoad or "model"
     self.modelBackupFilename = ((args.modelFilename ) or "model") .."-backup"
     -- Parametrs of Q function
-	self.discount = args.discount or 0.99
+	self.discount = args.discount or 0.98
 	self.minibatchSize = args.minibatchSize or 32
     -- How many frames must pass for us to learn again qLearnMiniBatch
     self.minibatchLearnRate = 1
     self.replayMemoryMaxSize = 50000
     self.minibatchCounter = 0
 	self.l2 = args.l2 or 0.000001-- L2 cost 
-	self.learning_rate_start = args.learning_rate or 0.000025
+	self.learning_rate_start = args.learning_rate or 0.0001
     self.learning_rate = self.learning_rate_start 
-    self.learning_rate_end = args.learning_rate_end or 0.000025
+    self.learning_rate_end = args.learning_rate_end or 0.0001
     self.learning_rate_endt = args.lr_endt or 2000000
     self.epsilon = 0.5
     --self.levelScale = 0.01
@@ -51,7 +52,7 @@ function DeepQNN:__init(args)
     --self.stepW = 0.000001
     self.stepW = 0.00001
     self.epsilon_start = 1
-    self.epsilon_end = 0.05
+    self.epsilon_end = 0.1
     self.lastSavedBackup = false
 
     -- Creating model of neural network
@@ -80,12 +81,19 @@ function DeepQNN:__init(args)
     self.gameDriver:__init()
     self.gameDriver:setMaxSpeed()
 
+    -- Rember self best network
+    self.bestNetworkMaxFilename = (self.modelFilename or model) .. ("-best-max")
+    self.bestNetworkAvgFilename = (self.modelFilename or model) .. ("-best-avg")
+    self.bestNetworkAvgReward = 0
+    self.bestNetworkMaxReward = 0
+
+
     -- Max rewards
-	self.maxReward = 1000
-	self.minReward = -self.maxReward
+	self.maxReward = 500
+	self.minReward = 0---self.maxReward
     -- Bonus points and time penalty
 	self.winBonus = self.maxReward
-	self.timePenalty = -5
+	self.timePenalty = 0
     -- Reward range (-a, a), used for scaling reward
     self.rewardRange = 1
 
@@ -114,34 +122,19 @@ end
 function DeepQNN:getNeuralNetwork(hidden)
     local hus = hidden or 1024--144
     local net = nn.Sequential()
-    -- 3 inputplane, 12 output planes, kernel width and height is 9
-    -- Output images are 112-9 +1 =104x104
     -- 3 in, 48 out, kernel 8x8, step=4, output is floor((112 -8)/4 + 1) = 27
     net:add(nn.SpatialConvolutionMM(3, 48, 8, 8, 4, 4, 0, 0))
     net:add(nn.Tanh())
-    --net:add(nn.SpatialMaxPooling(2, 2, 2, 2))
-    -- Max pooling 48 input planes, 96 output planes kernel is 5x5
-    -- Input images are 52x52 output are 48x48
     -- 48x27x27 in, 96x12x12 out (27-4)/2 + 1 = 12
     net:add(nn.SpatialConvolutionMM(48, 96, 4, 4, 2, 2, 0, 0))
     net:add(nn.Tanh())
-    --net:add(nn.SpatialMaxPooling(2, 2, 2, 2))
-    -- We have 96 output planes with images 24x24 this is 96*24*24 nodes
-    -- 96x25x25 in, 192x13x13 out
-    --net:add(nn.SpatialConvolutionMM(96, 192, , 1))
-    --net:add(nn.Tanh())
-    -- We have 192 planes of size 24x24
-    --net:add(nn.SpatialMaxPooling(2, 2, 2, 2))
-    -- We have output of 192 planes of images 12x12
-    --net:add(nn.View(192*12*12))
-    --net:add(nn.Linear(192*12*12, hus))
     net:add(nn.View(96*12*12))
     net:add(nn.Linear(96*12*12, hus))
     net:add(nn.Tanh())
     net:add(nn.Linear(hus, hus))
     net:add(nn.Tanh())
     net:add(nn.Linear(hus, #self.classes))
-    net:add(nn.LogSoftMax())
+    --net:add(nn.LogSoftMax())
     return net
 end
 
@@ -203,6 +196,62 @@ function DeepQNN:actionToNumber(action)
 end
 
 
+-- This function measure performance of game by net
+function DeepQNN:measurePerformance(nTests)
+    print("Measuring performance of network in a game.. This might take a while...")
+    local maxRewardAchieved = 0
+    local avgRewardAchieved = 0
+    -- Performin nTests games
+    for i = 1, nTests do
+        collectgarbage()
+        local endOfGame = false
+        self.gameDriver:loadSaveState()
+        xlua.progress(i, nTests)
+        k = 1
+        -- Playing until game over
+        while (not endOfGame) do
+            local state = self.gameDriver:getState(k)
+            endOfGame = state.terminal
+            if endOfGame then
+                -- Remember max score, and avg score
+                maxRewardAchieved = math.max(maxRewardAchieved, state.score)
+                avgRewardAchieved = avgRewardAchieved + state.score
+            else
+                local action = self:eGreedyLearn(state)
+                self.gameDriver:sendButtons(action)
+                k = self.gameDriver:advanceToNextFrame(k)
+            end
+        end
+    end
+
+    avgRewardAchieved = avgRewardAchieved / nTests
+
+    if maxRewardAchieved > self.bestNetworkMaxReward then
+        torch.save(self.bestNetworkMaxFilename .. ".t7", {
+            model = self.model,
+            epochs = self.passedEpochs,
+            minibatchSize = self.minibatchSize
+        }, "binary", true)
+        self.bestNetworkMaxReward = maxRewardAchieved
+    end
+    if avgRewardAchieved > self.bestNetworkAvgReward then
+        torch.save(self.bestNetworkAvgFilename .. ".t7", {
+            model = self.model,
+            epochs = self.passedEpochs,
+            minibatchSize = self.minibatchSize
+        }, "binary", true)
+        self.bestNetworkAvgReward = avgRewardAchieved
+    end
+
+    local f = io.open("performance-logs.txt", "a")
+    f:write("Epoch : " .. self.passedEpochs .. 
+        " , Step: " .. self.steps .. ", Avg:" ..
+        avgRewardAchieved .. ", Max: " .. 
+        maxRewardAchieved .. "\n")
+    f:close()
+
+end
+
 -- In this function we test our network - how it performs in live action
 -- Number of steps is how many frames it will play
 function DeepQNN:test(steps)
@@ -216,17 +265,8 @@ function DeepQNN:test(steps)
         local state = self.gameDriver:getState(i)
         endOfGame = state.terminal
         if (not endOfGame) then
-            -- Reshaping our vector so it fits our network
-            --local input = image.scale(state.screenTensor, dimensions[2], 
-            --    dimensions[3])
-            --input = state.screenTensor
-            --input = (input:view(self.dimensions[1] * self.dimensions[2] * 
-            --    self.dimensions[3])):cl()
-			-- update state
-			--state.screenTensor = input
-            local action = self:greedyLearn(state)
             -- Getting set of keys to press
-            --local action = self:getAction(output)
+            local action = self:greedyLearn(state)
             -- Sending the keys
             self.gameDriver:sendButtons(action)
             -- Playing next frame
@@ -243,7 +283,7 @@ end
 
 -- We are checking the error on whole memory.
 function DeepQNN:testWholeReplayMemory()
-    print("Testing...")
+    print("Testing... This takes a while...")
     local l = 1
     local k = 0
     local all = false
@@ -285,22 +325,10 @@ end
 -- Calculates the mean answer on the samples
 function DeepQNN:updateStatistics()
     self:createRandomMiniBatch()
-    --local pa = 0
-    --local aa = 0
-    --for i = 1, self.validationSize do
-    --    local targets, delta, q2Max = self:updateQValues()
-    --    aa = aa + delta:clone():abs():mean()
-    --    pa = pa + ((self.model:forward(self.minibatch.s:view(
-    --        self.minibatchSize, self.dimensions[1] * 
-    --        self.dimensions[2] * self.dimensions[3]):cl()):sum() - 
-    --            self.minibatch.r:sum()) / self.minibatchSize)
-    --end
     local targets, delta, q2Max = self:updateQValues()
     self.accuraccyMinErr = delta:clone():abs():min()
     self.accuraccyMaxErr = delta:clone():abs():max()
     self.accuracyMeanErr = delta:clone():abs():mean()
-    --self.accuracyAvg = aa / self.validationSize
-    --self.predAvg = pa / self.validationSize
 end
 
 
@@ -320,6 +348,7 @@ function DeepQNN:train(epochs, steps)
         print("Starting epoch :" .. i)
         -- Terminating epoch training if level has ended or game over happend
         while (t <= steps) do--and (not start_state.terminal) do
+            collectgarbage()
             self.steps = t
             xlua.progress(t, steps)
             if start_state.terminal then
@@ -380,6 +409,9 @@ function DeepQNN:train(epochs, steps)
         self:saveNeuralNetwork()
         self:testWholeReplayMemory()
         collectgarbage()
+        -- Measuring performance of the network
+        self:measurePerformance(10)
+        collectgarbage()
     end
 end
 
@@ -398,9 +430,6 @@ function DeepQNN:updateQValues()
 	t = t:mul(-1):add(1)
 
 	-- compute max_a Q(s2, a) for each state in s2
-	--q2Max = self.model:forward(s2:view(self.minibatchSize, self.dimensions[1] * 
-    --    self.dimensions[2] * self.dimensions[3]):cl()):max(2)
-
     q2Max = self.model:forward(s2:cl()):max(2)
 	-- compute q2 = (1-terminal) * gamma * max_a Q(s2, a)
 	q2 = q2Max:clone():mul(self.discount):cmul(t:cl())
@@ -410,9 +439,6 @@ function DeepQNN:updateQValues()
 	delta:add(q2):cl()
 
 	-- compute q = Q(s,a)
-	--local q_all = self.model:forward(s:view(self.minibatchSize, 
-    --    self.dimensions[1] * self.dimensions[2] * 
-    --    self.dimensions[3]):cl())
     local q_all = self.model:forward(s:cl())
 	q = torch.ClTensor(q_all:size(1))
 	for i = 1,q_all:size(1) do
@@ -447,8 +473,6 @@ end
 
 -- Returns an action based on the greedy alg
 function DeepQNN:greedyLearn(state)
-	--local output = self.model:forward(state.screenTensor:view(
-    --    self.dimensions[1] * self.dimensions[2] * self.dimensions[3]):cl())
     local output = self.model:forward(state.screenTensor:cl())
 	return self:getAction(output)
 end
@@ -506,7 +530,6 @@ function DeepQNN:saveNeuralNetwork()
     filename = filename .. "-network"
     torch.save(filename .. ".t7", {
         model = self.model,
-        --replayMemory = self.replayMemory,
         epochs = self.passedEpochs,
         minibatchSize = self.minibatchSize
     }, "binary", true)
@@ -523,24 +546,28 @@ function DeepQNN:saveReplayMemory()
     filename = filename .. "-replayMemory"
     torch.save(filename .. ".t7", {
         replayMemory = self.replayMemory,
-    }, "ascii", true)
+    }, "binary", true)
     --self.lastSavedBackup = not self.lastSavedBackup
 end
 
 function DeepQNN:loadNeuralNetwork()
-    local saveModel = torch.load(self.modelFilename .. "-network" .. ".t7", "binary", true)
+    local saveModel = torch.load(self.modelFilenameLoad .. "-backup" 
+        .. "-network" .. ".t7", "binary", true)
     self.model = saveModel.model--:float()
     --self.replayMemory = saveModel.replayMemory
     --setmetatable(self.replayMemory, ReplayMemory)
     --self.replayMemory.maxSize = self.replayMemoryMaxSize
     self.passedEpochs = saveModel.epochs
     self.minibatchSize = saveModel.minibatchSize
+    --self.model = self.model:cl()
 end
 
 function DeepQNN:loadReplayMemory()
-    local saveModel = torch.load(self.modelFilename .. "-replayMemory" .. ".t7", "binary", true)
+    local saveModel = torch.load(self.modelFilenameLoad .. "-replayMemory" 
+        .. ".t7", "binary", true)
     self.replayMemory = saveModel.replayMemory
     setmetatable(self.replayMemory, ReplayMemory)
+    self.replayMemory.maxSize = self.replayMemoryMaxSize
 end
 
 
@@ -557,11 +584,12 @@ function DeepQNN:countReward(startState, nextState)
 
 	-- when game over return -1
 	if nextState.terminal then
-		if not nextState.isLevelWon then
-			return -1 * self.rewardRange
-		else
-			reward = self.winBonus
-		end
+		--if not nextState.isLevelWon then
+		--	return -1 * self.rewardRange
+		--else
+		--	reward = self.winBonus
+		--end
+        return 0
 	end
 
 	local delta_score = nextState.score - startState.score
@@ -569,11 +597,11 @@ function DeepQNN:countReward(startState, nextState)
     --reward = nextState.score
 	reward = math.min(self.maxReward, reward)
 	reward = math.max(self.minReward, reward)
-    return (reward / self.maxReward) * self.rewardRange
+    return reward--(reward / self.maxReward) * self.rewardRange
 end
 
 net = DeepQNN.create()
-args = {modelFilename="model14"}--, load=true}--{modelFilename="model9", load=true}---{modelFilename="model9"}--{load=true}--modelFilename="model5",  load=true}--{load=true} -- {}
+args = {modelFilenameLoad="model20", modelFilename="model20", load=true}
 net:__init(args)
-net:train(100000,10000)
+net:train(1000,10000)
 --net:test(10000)
