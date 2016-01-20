@@ -128,8 +128,11 @@ function DeepQNN:getNeuralNetwork(hidden)
     -- 48x27x27 in, 96x12x12 out (27-4)/2 + 1 = 12
     net:add(nn.SpatialConvolutionMM(48, 96, 4, 4, 2, 2, 0, 0))
     net:add(nn.Tanh())
-    net:add(nn.View(96*12*12))
-    net:add(nn.Linear(96*12*12, hus))
+    -- 96x12x12 in, 96x5x5  (12-3)/1 + 1 = 10 
+    net:add(nn.SpatialConvolutionMM(96, 96, 3, 3, 1, 1, 0, 0))
+    net:add(nn.Tanh())
+    net:add(nn.View(96*10*10))
+    net:add(nn.Linear(96*10*10, hus))
     net:add(nn.Tanh())
     net:add(nn.Linear(hus, hus))
     net:add(nn.Tanh())
@@ -527,12 +530,12 @@ function DeepQNN:saveNeuralNetwork()
     else
         filename = self.modelBackupFilename
     end
-    filename = filename .. "-network"
+    filename = filename .. "-network-ascii"
     torch.save(filename .. ".t7", {
-        model = self.model,
+        model = self.model:float(),
         epochs = self.passedEpochs,
         minibatchSize = self.minibatchSize
-    }, "binary", true)
+    }, "ascii", true)
     self.lastSavedBackup = not self.lastSavedBackup
 end
 
@@ -551,8 +554,8 @@ function DeepQNN:saveReplayMemory()
 end
 
 function DeepQNN:loadNeuralNetwork()
-    local saveModel = torch.load(self.modelFilenameLoad .. "-backup" 
-        .. "-network" .. ".t7", "binary", true)
+    local saveModel = torch.load(self.modelFilenameLoad .. "-backup" .. 
+        "-network" .. ".t7", "binary", true)
     self.model = saveModel.model--:float()
     --self.replayMemory = saveModel.replayMemory
     --setmetatable(self.replayMemory, ReplayMemory)
@@ -563,8 +566,8 @@ function DeepQNN:loadNeuralNetwork()
 end
 
 function DeepQNN:loadReplayMemory()
-    local saveModel = torch.load(self.modelFilenameLoad .. "-replayMemory" 
-        .. ".t7", "binary", true)
+    local saveModel = torch.load(self.modelFilenameLoad .. "-replayMemory" .. 
+        ".t7", "binary", true)
     self.replayMemory = saveModel.replayMemory
     setmetatable(self.replayMemory, ReplayMemory)
     self.replayMemory.maxSize = self.replayMemoryMaxSize
@@ -601,7 +604,8 @@ function DeepQNN:countReward(startState, nextState)
 end
 
 net = DeepQNN.create()
-args = {modelFilenameLoad="model20", modelFilename="model20", load=true}
+args = {modelFilenameLoad="model21", modelFilename="model21", load=true}
 net:__init(args)
-net:train(1000,10000)
+net:saveNeuralNetwork()
+--net:train(1000,10000)
 --net:test(10000)
